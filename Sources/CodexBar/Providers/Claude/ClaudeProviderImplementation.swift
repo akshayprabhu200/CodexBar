@@ -29,6 +29,7 @@ struct ClaudeProviderImplementation: ProviderImplementation {
         _ = settings.claudeSwapEnabled
         _ = settings.claudeSwapShowSingleAccount
         _ = settings.claudeSwapExecutablePath
+        _ = settings.claudeSpendConfigDirectoriesText
     }
 
     @MainActor
@@ -307,6 +308,17 @@ struct ClaudeProviderImplementation: ProviderImplementation {
                 kind: .plain,
                 placeholder: "~/.local/bin/cswap",
                 binding: context.stringBinding(\.claudeSwapExecutablePath),
+                actions: [],
+                isVisible: { context.settings.claudeSwapEnabled },
+                onActivate: nil),
+            ProviderSettingsFieldDescriptor(
+                id: "claude-spend-config-directories",
+                title: "Additional Claude config directories",
+                subtitle: "Optional semicolon-separated CLAUDE_CONFIG_DIR roots. " +
+                    "Spend is aggregated under Claude without account labels.",
+                kind: .plain,
+                placeholder: "~/.claude-work; ~/.claude-personal",
+                binding: context.stringBinding(\.claudeSpendConfigDirectoriesText),
                 actions: [],
                 isVisible: { context.settings.claudeSwapEnabled },
                 onActivate: nil),

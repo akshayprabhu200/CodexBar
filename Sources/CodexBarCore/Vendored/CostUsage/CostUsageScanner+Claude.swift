@@ -69,11 +69,11 @@ extension CostUsageScanner {
         var seen: Set<String> = []
         var out: [URL] = []
         for root in roots {
-            let standardized = root.standardizedFileURL
-            let path = standardized.path
+            let canonical = root.standardizedFileURL.resolvingSymlinksInPath()
+            let path = canonical.path
             guard !seen.contains(path) else { continue }
             seen.insert(path)
-            out.append(standardized)
+            out.append(canonical)
         }
         return out
     }

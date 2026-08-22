@@ -50,6 +50,7 @@ struct SettingsDefaultsState {
     var codexLocalSessionCostLedgerEnabled: Bool
     var costUsageHistoryDays: Int
     var costUsageBucketTimeZoneIdentifier: String
+    var claudeSpendConfigDirectories: [String]
     var openCodexUsageLogsEnabled: Bool
     var hideNativeCodexCostWhenOpenCodexPresent: Bool
     var spendDashboardHiddenSourceIDs: [String]

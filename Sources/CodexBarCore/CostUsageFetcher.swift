@@ -186,6 +186,7 @@ public struct CostUsageFetcher: Sendable {
         forceRefresh: Bool = false,
         allowVertexClaudeFallback: Bool = false,
         codexHomePath: String? = nil,
+        claudeConfigDirectories: [String] = [],
         historyDays: Int = 30,
         cursorCookieHeaderOverride: String? = nil,
         allowPricingRefresh: Bool = true,
@@ -199,6 +200,7 @@ public struct CostUsageFetcher: Sendable {
             forceRefresh: forceRefresh,
             allowVertexClaudeFallback: allowVertexClaudeFallback,
             codexHomePath: codexHomePath,
+            claudeConfigDirectories: claudeConfigDirectories,
             historyDays: historyDays,
             cursorCookieHeaderOverride: cursorCookieHeaderOverride,
             allowPricingRefresh: allowPricingRefresh,
@@ -215,6 +217,7 @@ public struct CostUsageFetcher: Sendable {
         forceRefresh: Bool = false,
         allowVertexClaudeFallback: Bool = false,
         codexHomePath: String? = nil,
+        claudeConfigDirectories: [String] = [],
         historyDays: Int = 30,
         cursorCookieHeaderOverride: String? = nil,
         allowPricingRefresh: Bool = true,
@@ -234,6 +237,7 @@ public struct CostUsageFetcher: Sendable {
             forceRefresh: forceRefresh,
             allowVertexClaudeFallback: allowVertexClaudeFallback,
             codexHomePath: codexHomePath,
+            claudeConfigDirectories: claudeConfigDirectories,
             historyDays: historyDays,
             cursorCookieHeaderOverride: cursorCookieHeaderOverride,
             allowPricingRefresh: allowPricingRefresh,
@@ -407,6 +411,7 @@ public struct CostUsageFetcher: Sendable {
         forceRefresh: Bool = false,
         allowVertexClaudeFallback: Bool = false,
         codexHomePath: String? = nil,
+        claudeConfigDirectories: [String] = [],
         historyDays: Int = 30,
         cursorCookieHeaderOverride: String? = nil,
         allowPricingRefresh: Bool = true,
@@ -435,10 +440,14 @@ public struct CostUsageFetcher: Sendable {
             return remoteSnapshot
         }
 
-        var options = Self.resolvedScannerOptions(
-            overrideScannerOptions,
+        var options = Self.addingClaudeConfigDirectories(
+            claudeConfigDirectories,
             provider: provider,
-            codexHomePath: codexHomePath)
+            environment: environment,
+            to: Self.resolvedScannerOptions(
+                overrideScannerOptions,
+                provider: provider,
+                codexHomePath: codexHomePath))
         // Rolling window is inclusive, so a 30-day display starts 29 days before `now`.
         let since = options.calendar.date(byAdding: .day, value: -(clampedHistoryDays - 1), to: now) ?? now
         let scopedCodexHomePath = codexHomePath?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -500,6 +509,7 @@ public struct CostUsageFetcher: Sendable {
                 forceRefresh: forceRefresh,
                 allowVertexClaudeFallback: allowVertexClaudeFallback,
                 codexHomePath: codexHomePath,
+                claudeConfigDirectories: claudeConfigDirectories,
                 historyDays: historyDays,
                 cursorCookieHeaderOverride: cursorCookieHeaderOverride,
                 allowPricingRefresh: allowPricingRefresh,

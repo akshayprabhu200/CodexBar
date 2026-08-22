@@ -552,6 +552,8 @@ extension SettingsStore {
             forKey: "codexLocalSessionCostLedgerEnabled") as? Bool ?? false
         let rawCostUsageHistoryDays = userDefaults.object(forKey: "tokenCostUsageHistoryDays") as? Int ?? 30
         let costUsageHistoryDays = max(1, min(365, rawCostUsageHistoryDays))
+        let claudeSpendConfigDirectories = Self.normalizedClaudeSpendConfigDirectories(
+            userDefaults.stringArray(forKey: "claudeSpendConfigDirectories") ?? [])
         let storedBucketTimeZone = userDefaults.string(forKey: "tokenCostUsageBucketTimeZone") ?? ""
         let costUsageBucketTimeZoneIdentifier = CostUsageBucketTimeZone.isValidIdentifier(storedBucketTimeZone)
             ? storedBucketTimeZone
@@ -693,6 +695,7 @@ extension SettingsStore {
             codexLocalSessionCostLedgerEnabled: codexLocalSessionCostLedgerEnabled,
             costUsageHistoryDays: costUsageHistoryDays,
             costUsageBucketTimeZoneIdentifier: costUsageBucketTimeZoneIdentifier,
+            claudeSpendConfigDirectories: claudeSpendConfigDirectories,
             openCodexUsageLogsEnabled: openCodexUsageLogsEnabled,
             hideNativeCodexCostWhenOpenCodexPresent: hideNativeCodexCostWhenOpenCodexPresent,
             spendDashboardHiddenSourceIDs: spendDashboardHiddenSourceIDs,

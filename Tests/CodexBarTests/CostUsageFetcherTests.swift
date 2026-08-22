@@ -108,6 +108,78 @@ struct CostUsageFetcherTests {
         #expect(ambient.sessionTokens == 100)
         #expect(managed.sessionTokens == 10)
     }
+
+    @Test
+    func `fetcher aggregates unique explicit claude homes without double counting aliases`() async throws {
+        let env = try CostUsageTestEnvironment()
+        defer { env.cleanup() }
+
+        let day = try env.makeLocalNoon(year: 2026, month: 4, day: 8)
+        let firstHome = env.root.appendingPathComponent("claude-home-one", isDirectory: true)
+        let secondHome = env.root.appendingPathComponent("claude-home-two", isDirectory: true)
+        let firstProjects = firstHome.appendingPathComponent("projects", isDirectory: true)
+        let secondProjects = secondHome.appendingPathComponent("projects", isDirectory: true)
+        try Self.writeClaudeSessionFile(
+            projectsRoot: firstProjects,
+            env: env,
+            day: day,
+            filename: "first.jsonl",
+            usage: (input: 20, output: 5))
+        try Self.writeClaudeSessionFile(
+            projectsRoot: secondProjects,
+            env: env,
+            day: day,
+            filename: "second.jsonl",
+            usage: (input: 30, output: 10))
+
+        let aliasedHome = env.root.appendingPathComponent("claude-home-alias", isDirectory: true)
+        let missingHome = env.root.appendingPathComponent("claude-home-missing", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: aliasedHome, withDestinationURL: firstHome)
+        var options = CostUsageScanner.Options(cacheRoot: env.cacheRoot)
+        options.refreshMinIntervalSeconds = 0
+
+        let snapshot = try await CostUsageFetcher.loadTokenSnapshot(
+            provider: .claude,
+            environment: [ClaudeConfigPaths.configDirectoryEnvironmentKey: firstHome.path],
+            now: day,
+            claudeConfigDirectories: [firstHome.path, aliasedHome.path, missingHome.path, secondHome.path],
+            historyDays: 1,
+            allowPricingRefresh: false,
+            includePiSessions: false,
+            scannerOptions: options)
+
+        #expect(snapshot.sessionTokens == 65)
+        #expect(snapshot.daily.count == 1)
+        #expect(snapshot.daily[0].totalTokens == 65)
+    }
+}
+
+extension CostUsageFetcherTests {
+    private static func writeClaudeSessionFile(
+        projectsRoot: URL,
+        env: CostUsageTestEnvironment,
+        day: Date,
+        filename: String,
+        usage: (input: Int, output: Int)) throws
+    {
+        let directory = projectsRoot.appendingPathComponent("project", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let event: [String: Any] = [
+            "type": "assistant",
+            "timestamp": env.isoString(for: day),
+            "message": [
+                "model": "claude-test-model",
+                "usage": [
+                    "input_tokens": usage.input,
+                    "output_tokens": usage.output,
+                ],
+            ],
+        ]
+        try env.jsonl([event]).write(
+            to: directory.appendingPathComponent(filename),
+            atomically: true,
+            encoding: .utf8)
+    }
 }
 
 extension CostUsageFetcherTests {

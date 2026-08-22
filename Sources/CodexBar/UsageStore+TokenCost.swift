@@ -1,4 +1,5 @@
 import CodexBarCore
+import CryptoKit
 import Foundation
 
 struct CurrentProviderConfigTokenSnapshot: Sendable, Equatable {
@@ -63,6 +64,9 @@ extension UsageStore {
                 settings: self.settings,
                 tokenOverride: nil)
             : self.environmentBase
+        let claudeConfigDirectories = provider == .claude && self.settings.claudeSwapEnabled
+            ? self.settings.claudeSpendConfigDirectories
+            : []
         return try await withThrowingTaskGroup(of: CostUsageTokenSnapshot.self) { group in
             group.addTask(priority: .utility) {
                 try await fetcher.loadTokenSnapshot(
@@ -72,6 +76,7 @@ extension UsageStore {
                     forceRefresh: force,
                     allowVertexClaudeFallback: !self.isEnabled(.claude),
                     codexHomePath: codexHomePath,
+                    claudeConfigDirectories: claudeConfigDirectories,
                     historyDays: historyDays,
                     cursorCookieHeaderOverride: cursorCookieHeaderOverride,
                     allowPricingRefresh: allowPricingRefresh,
@@ -290,6 +295,21 @@ extension UsageStore {
     func tokenCostScope(for provider: UsageProvider) -> (codexHomePath: String?, signature: String) {
         if provider == .vertexai {
             return (nil, "vertexai:allow-claude-fallback=\(!self.isEnabled(.claude))")
+        }
+        if provider == .claude {
+            let directories = self.settings.claudeSwapEnabled
+                ? self.settings.claudeSpendConfigDirectories
+                : []
+            guard !directories.isEmpty else { return (nil, provider.rawValue) }
+            let canonical = directories.map {
+                URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath, isDirectory: true)
+                    .standardizedFileURL
+                    .resolvingSymlinksInPath()
+                    .path
+            }.sorted()
+            let digest = SHA256.hash(data: Data(canonical.joined(separator: "\u{0}").utf8))
+            let fingerprint = digest.map { String(format: "%02x", $0) }.joined()
+            return (nil, "claude:config-roots:\(fingerprint)")
         }
         guard provider == .codex else {
             return (nil, provider.rawValue)

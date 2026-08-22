@@ -606,6 +606,47 @@ extension SettingsStore {
         CostUsageBucketTimeZone.calendar(identifier: self.costUsageBucketTimeZoneIdentifier)
     }
 
+    var claudeSpendConfigDirectories: [String] {
+        get { self.defaultsState.claudeSpendConfigDirectories }
+        set {
+            let normalized = Self.normalizedClaudeSpendConfigDirectories(newValue)
+            let changed = self.defaultsState.claudeSpendConfigDirectories != normalized
+            self.defaultsState.claudeSpendConfigDirectories = normalized
+            self.userDefaults.set(normalized, forKey: "claudeSpendConfigDirectories")
+            if changed {
+                self.costUsageSettingsRevision &+= 1
+            }
+            self.noteBackgroundWorkSettingsChanged()
+        }
+    }
+
+    var claudeSpendConfigDirectoriesText: String {
+        get { self.claudeSpendConfigDirectories.joined(separator: "; ") }
+        set {
+            self.claudeSpendConfigDirectories = newValue
+                .split(separator: ";", omittingEmptySubsequences: true)
+                .map(String.init)
+        }
+    }
+
+    nonisolated static func normalizedClaudeSpendConfigDirectories(_ directories: [String]) -> [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+        for directory in directories {
+            let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let expanded = (trimmed as NSString).expandingTildeInPath
+            guard expanded.hasPrefix("/") else { continue }
+            let canonical = URL(fileURLWithPath: expanded, isDirectory: true)
+                .standardizedFileURL
+                .resolvingSymlinksInPath()
+                .path
+            guard seen.insert(canonical).inserted else { continue }
+            result.append(trimmed)
+        }
+        return result
+    }
+
     var openCodexUsageLogsEnabled: Bool {
         get { self.defaultsState.openCodexUsageLogsEnabled }
         set {
