@@ -455,8 +455,9 @@ extension UsageStore {
     {
         let windowDays = historyDays ?? self.settings.costUsageHistoryDays
         // Provider-specific by design: snapshot-backed spend sources own their live billing
-        // projection. Grok contributes local session tokens only; xAI contributes Management API
-        // daily spend only. Neither converts a quota or prepaid balance into dollars.
+        // projection. Groq contributes console activity; Grok contributes local session tokens only;
+        // xAI contributes Management API daily spend only. None converts a quota or prepaid balance
+        // into dollars.
         switch provider {
         case .openai:
             return snapshot?.openAIAPIUsage?.toCostUsageTokenSnapshot()
@@ -472,6 +473,8 @@ extension UsageStore {
             }
         case .openrouter:
             return snapshot?.costUsage
+        case .groq:
+            return snapshot?.costUsage
         case .xai:
             return snapshot.flatMap { XAICostUsageMapping.tokenSnapshot(from: $0, historyDays: windowDays) }
         case .grok:
@@ -486,7 +489,7 @@ extension UsageStore {
         // Provider-specific by design: these providers project live usage snapshots into the
         // shared spend catalog instead of running the local CostUsageFetcher JSONL pipeline.
         switch provider {
-        case .grok, .mistral, .openai, .opencodego, .openrouter, .xai:
+        case .grok, .groq, .mistral, .openai, .opencodego, .openrouter, .xai:
             true
         default:
             false

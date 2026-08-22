@@ -47,8 +47,10 @@ public enum GroqProviderDescriptor {
                     ProviderColor(hex: 0x97FCA7),
                 ]),
             tokenCost: ProviderTokenCostConfig(
-                supportsTokenCost: false,
+                supportsTokenCost: true,
                 noDataMessage: { "Sign in at console.groq.com to show Groq spend and token usage." },
+                menuHintLines: [.literal("Reported by Groq console activity.")],
+                showsCostMenuSection: false,
                 showsRequestHistory: false,
                 hintPlacement: .hidden),
             presentation: ProviderUsagePresentation(

@@ -105,7 +105,7 @@ public struct GroqConsoleFetcher: Sendable {
             environment: environment,
             transport: transport)
 
-        return Self.makeSnapshot(rows: rows, historyDays: days, updatedAt: now, calendar: calendar)
+        return try Self.makeSnapshot(rows: rows, historyDays: days, updatedAt: now, calendar: calendar)
     }
 
     public static func _makeSnapshotForTesting(
@@ -115,7 +115,7 @@ public struct GroqConsoleFetcher: Sendable {
         calendar: Calendar = .current) throws -> GroqConsoleUsageSnapshot
     {
         let rows = try JSONDecoder().decode(GroqActivityResponse.self, from: activityJSON).data
-        return Self.makeSnapshot(rows: rows, historyDays: historyDays, updatedAt: updatedAt, calendar: calendar)
+        return try Self.makeSnapshot(rows: rows, historyDays: historyDays, updatedAt: updatedAt, calendar: calendar)
     }
 
     /// Extracts the Groq organization id from the session JWT's
@@ -198,7 +198,7 @@ public struct GroqConsoleFetcher: Sendable {
         rows: [GroqActivityResponse.Row],
         historyDays: Int,
         updatedAt: Date,
-        calendar: Calendar) -> GroqConsoleUsageSnapshot
+        calendar: Calendar) throws -> GroqConsoleUsageSnapshot
     {
         let dayFormatter = DateFormatter()
         dayFormatter.calendar = calendar
@@ -222,7 +222,21 @@ public struct GroqConsoleFetcher: Sendable {
         var byDay: [String: DayAccumulator] = [:]
         var organizationName: String?
 
-        for row in rows {
+        for (index, row) in rows.enumerated() {
+            guard row.timestamp.isFinite else {
+                throw GroqConsoleError.parseFailed("activity row \(index) has an invalid timestamp")
+            }
+            guard let requests = row.numRequests, requests >= 0,
+                  let contextTokens = row.nContextTokensTotal, contextTokens >= 0,
+                  let generatedTokens = row.nGeneratedTokensTotal, generatedTokens >= 0,
+                  let costUSD = row.cost, costUSD.isFinite, costUSD >= 0
+            else {
+                throw GroqConsoleError.parseFailed("activity row \(index) has incomplete usage or spend")
+            }
+            let nonCachedTokens = row.nNonCachedContextTokensTotal ?? contextTokens
+            guard nonCachedTokens >= 0, nonCachedTokens <= contextTokens else {
+                throw GroqConsoleError.parseFailed("activity row \(index) has invalid cached-token usage")
+            }
             if organizationName == nil, let name = row.organizationName, !name.isEmpty {
                 organizationName = name
             }
@@ -231,24 +245,25 @@ public struct GroqConsoleFetcher: Sendable {
             let key = dayFormatter.string(from: dayStart)
             let modelName = (row.model?.isEmpty == false ? row.model : nil) ?? "unknown"
 
-            let contextTokens = row.nContextTokensTotal ?? 0
-            let nonCached = row.nNonCachedContextTokensTotal ?? contextTokens
-            let cached = max(0, contextTokens - nonCached)
-            let generated = row.nGeneratedTokensTotal ?? 0
+            let cachedTokens = contextTokens - nonCachedTokens
 
             var day = byDay[key] ?? DayAccumulator(startTime: dayStart)
             var model = day.models[modelName] ?? ModelAccumulator()
-            model.requests += row.numRequests ?? 0
-            model.inputTokens += nonCached
-            model.cachedInputTokens += cached
-            model.outputTokens += generated
-            model.totalTokens += contextTokens + generated
-            model.costUSD += row.cost ?? 0
+            model.requests = try Self.checkedSum(model.requests, requests, row: index)
+            model.inputTokens = try Self.checkedSum(model.inputTokens, nonCachedTokens, row: index)
+            model.cachedInputTokens = try Self.checkedSum(model.cachedInputTokens, cachedTokens, row: index)
+            model.outputTokens = try Self.checkedSum(model.outputTokens, generatedTokens, row: index)
+            let rowTokens = try Self.checkedSum(contextTokens, generatedTokens, row: index)
+            model.totalTokens = try Self.checkedSum(model.totalTokens, rowTokens, row: index)
+            model.costUSD += costUSD
+            guard model.costUSD.isFinite else {
+                throw GroqConsoleError.parseFailed("activity row \(index) spend overflowed")
+            }
             day.models[modelName] = model
             byDay[key] = day
         }
 
-        let buckets = byDay.map { key, day -> GroqConsoleUsageSnapshot.DailyBucket in
+        let buckets = try byDay.map { key, day -> GroqConsoleUsageSnapshot.DailyBucket in
             let models = day.models.map { name, acc in
                 GroqConsoleUsageSnapshot.ModelBreakdown(
                     name: name,
@@ -259,17 +274,34 @@ public struct GroqConsoleFetcher: Sendable {
                     totalTokens: acc.totalTokens,
                     costUSD: acc.costUSD)
             }.sorted { $0.totalTokens > $1.totalTokens }
+            var requests = 0
+            var inputTokens = 0
+            var cachedInputTokens = 0
+            var outputTokens = 0
+            var totalTokens = 0
+            var costUSD = 0.0
+            for model in models {
+                requests = try Self.checkedSum(requests, model.requests, row: nil)
+                inputTokens = try Self.checkedSum(inputTokens, model.inputTokens, row: nil)
+                cachedInputTokens = try Self.checkedSum(cachedInputTokens, model.cachedInputTokens, row: nil)
+                outputTokens = try Self.checkedSum(outputTokens, model.outputTokens, row: nil)
+                totalTokens = try Self.checkedSum(totalTokens, model.totalTokens, row: nil)
+                costUSD += model.costUSD
+                guard costUSD.isFinite else {
+                    throw GroqConsoleError.parseFailed("daily spend overflowed")
+                }
+            }
             let endTime = calendar.date(byAdding: .day, value: 1, to: day.startTime) ?? day.startTime
             return GroqConsoleUsageSnapshot.DailyBucket(
                 day: key,
                 startTime: day.startTime,
                 endTime: endTime,
-                costUSD: models.reduce(0) { $0 + $1.costUSD },
-                requests: models.reduce(0) { $0 + $1.requests },
-                inputTokens: models.reduce(0) { $0 + $1.inputTokens },
-                cachedInputTokens: models.reduce(0) { $0 + $1.cachedInputTokens },
-                outputTokens: models.reduce(0) { $0 + $1.outputTokens },
-                totalTokens: models.reduce(0) { $0 + $1.totalTokens },
+                costUSD: costUSD,
+                requests: requests,
+                inputTokens: inputTokens,
+                cachedInputTokens: cachedInputTokens,
+                outputTokens: outputTokens,
+                totalTokens: totalTokens,
                 models: models)
         }
 
@@ -278,6 +310,15 @@ public struct GroqConsoleFetcher: Sendable {
             updatedAt: updatedAt,
             historyDays: historyDays,
             organizationName: organizationName)
+    }
+
+    private static func checkedSum(_ lhs: Int, _ rhs: Int, row: Int?) throws -> Int {
+        let result = lhs.addingReportingOverflow(rhs)
+        guard !result.overflow else {
+            let scope = row.map { "activity row \($0)" } ?? "daily usage"
+            throw GroqConsoleError.parseFailed("\(scope) overflowed")
+        }
+        return result.partialValue
     }
 
     private static func responseSummary(_ data: Data) -> String {

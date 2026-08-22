@@ -112,6 +112,52 @@ struct GroqConsoleFetcherTests {
         #expect(snapshot.identity?.providerID == .groq)
         #expect(snapshot.identity?.loginMethod == "Console")
         #expect(snapshot.providerCost?.used == 0.5)
+        #expect(snapshot.costUsage?.last30DaysCostUSD == 0.5)
+        #expect(snapshot.costUsage?.last30DaysTokens == 150)
+        #expect(snapshot.costUsage?.last30DaysRequests == 10)
+        #expect(snapshot.costUsage?.costProvenance == .vendorMetered)
         #expect(snapshot.details.first?.chart?.points.count == 1)
+    }
+
+    @Test
+    func `rejects activity rows with missing spend instead of reporting zero`() throws {
+        let json = """
+        {"object":"list","data":[
+          {"organization_name":"Personal","model":"llama-3.1-8b-instant","timestamp":1783900800,
+           "num_requests":3,"n_context_tokens_total":100,"n_non_cached_context_tokens_total":80,
+           "n_generated_tokens_total":40}
+        ]}
+        """
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+
+        #expect(throws: GroqConsoleError.self) {
+            try GroqConsoleFetcher._makeSnapshotForTesting(
+                activityJSON: Data(json.utf8),
+                historyDays: 30,
+                updatedAt: Date(timeIntervalSince1970: 1_783_987_200),
+                calendar: calendar)
+        }
+    }
+
+    @Test
+    func `rejects activity rows with negative spend`() throws {
+        let json = """
+        {"object":"list","data":[
+          {"organization_name":"Personal","model":"llama-3.1-8b-instant","timestamp":1783900800,
+           "num_requests":3,"n_context_tokens_total":100,"n_non_cached_context_tokens_total":80,
+           "n_generated_tokens_total":40,"cost":-0.01}
+        ]}
+        """
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+
+        #expect(throws: GroqConsoleError.self) {
+            try GroqConsoleFetcher._makeSnapshotForTesting(
+                activityJSON: Data(json.utf8),
+                historyDays: 30,
+                updatedAt: Date(timeIntervalSince1970: 1_783_987_200),
+                calendar: calendar)
+        }
     }
 }
